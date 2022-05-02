@@ -1,0 +1,129 @@
+
+Configure a floating static IPv6 address on Core1 to the ISP:
+
+ipv6 route ::/0 GigabitEthernet0/1 2001:DB8:30::1 25
+
+#######################################
+
+
+Configure ORF filtering to limit IPv6 prefixes to only the default route:
+
+ipv6 prefix-list 1 seq 5 permit ::/0
+
+router bgp 20030
+address-family ipv6
+neighbor 2001:DB8:30::1 prefix-list 1 in
+
+#############################################
+tunnel:
+ R3:
+interface Tunnel0
+ ip address 200.30.255.129 255.255.255.252
+ ipv6 address FE80::3 link-local
+ ipv6 enable
+ ospfv3 1 ipv4 area 304
+ tunnel source Serial0/0/0
+ tunnel destination 200.30.255.234
+
+R4:
+ interface Tunnel0
+ ip address 200.30.255.130 255.255.255.252
+ ipv6 address FE80::4 link-local
+ ipv6 enable
+ ospfv3 1 ipv4 area 304
+ tunnel source Serial0/1/1
+ tunnel destination 200.30.255.233
+
+################################################
+
+Route Filtering 
+1. Ensure the R5 does not have the Area 34 prefix 200.x.255.232/30 in the routing table
+ a. do not use a distribute list 
+
+ bayad dar R3 bashe:
+
+ip prefix-list OSPF>BGP seq 5 permit 200.30.255.248/30
+route-map OSPF>BGP permit 10
+ match ip address prefix-list OSPF>BGP
+
+router bgp 20030
+ address-family ipv4
+  redistribute ospfv3 1 route-map OSPF>BGP
+
+######################################################
+Ensure the R3 prefers the path via Core1 for any 111.3.x.x prefixes
+a. specify the weight attribute
+
+toye R3 anjam midim:
+
+router bgp 20030
+ address-family ipv4
+  neighbor 200.30.151.1 route-map Going1113 in
+
+ip prefix-list 1 seq 10 permit 111.3.0.0/16 le 32
+
+route-map Going1113 permit 10
+ match ip address prefix-list 1
+ set weight 113
+
+#########################################
+
+Ensure the R3 prefers the path via Core2 for any prefixes that transit AS 888
+  a. specify the local preference
+
+in R3:
+ip as-path access-list 1 permit _888
+route-map Only888 permit 10
+ match as-path 1
+ set local-preference 188
+
+router bgp 20030
+ address-family ipv4
+   neighbor 200.30.152.2 route-map Only888 in
+
+#################################
+R4:
+ summary loop:
+
+router ospfv3 1
+ address-family ipv6
+ area 3 range 2001:DB8:4:a:a::/63
+
+R7: 
+summary add lo:
+router eigrp EIGRP
+ address-family ipv4 unicast autonomous-system 456
+   af-interface Serial0/0/1
+   summary-address 200.30.32.0 255.255.240.0
+ topology base
+ redistribute connected
+
+R5:
+ address-family ipv6 unicast autonomous-system 456
+  af-interface default
+   passive-interface
+  exit-af-interface
+  af-interface Serial0/0/1
+   no passive-interface
+   summary-address 2001:DB8:30:70::/60
+
+
+ ####################################
+passive interface:
+
+router eigrp EIGRP
+ address-family ipv4 unicast autonomous-system 456
+  af-interface default
+   passive-interface
+  exit-af-interface
+  af-interface Serial0/0/0
+    no passive-interface
+  exit-af-interface
+
+
+
+######################################
+
+
+
+
